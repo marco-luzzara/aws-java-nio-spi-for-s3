@@ -8,6 +8,7 @@ package software.amazon.nio.spi.s3.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.utils.Pair;
 
 import java.util.*;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 /**
  * Object to hold configuration of the S3 NIO SPI
  */
-public class S3NioSpiConfiguration implements Map<String, Object> {
+public class S3NioSpiConfiguration extends AbstractMap<String, Object> {
 
     public enum ConfigProperties {
         /**
@@ -26,7 +27,21 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
         /**
          * maximum fragment number
          */
-        S3_SPI_READ_MAX_FRAGMENT_NUMBER("s3.spi.read.max-fragment-number", 50);
+        S3_SPI_READ_MAX_FRAGMENT_NUMBER("s3.spi.read.max-fragment-number", 50),
+        /**
+         * the endpoint the S3 client connects to
+         */
+        S3_SPI_ENDPOINT("s3.spi.endpoint", "https://s3.us-east-1.amazonaws.com"),
+        /**
+         * the aws region
+         */
+        S3_SPI_REGION("s3.spi.region", Region.US_EAST_1),
+        /**
+         * access and secret key to use the s3 client
+         */
+        S3_SPI_ACCESS_KEY("s3.spi.access_key", ""),
+        S3_SPI_SECRET_KEY("s3.spi.secret_key", "");
+
 
         private final String propertyName;
         private final Object propertyDefaultValue;
@@ -48,14 +63,14 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
     /**
      * these are the properties initialized using the class methods
      */
-    private final Properties properties = new Properties();
+    private final Map<String, Object> properties = new HashMap<>();
 
     /**
      * these properties include the system props and the environment variables,
      * they always have the priority over the `properties` and cannot be deleted
      * because injected from the outside
     */
-    private final Properties overwritingProperties = new Properties();
+    private final Map<String, Object> overwritingProperties = new HashMap<>();
 
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -63,11 +78,6 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
      * Create a new, empty configuration
      */
     public S3NioSpiConfiguration(){
-        this.properties.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_NUMBER.getPropertyName(),
-                ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_NUMBER.getDefaultValue());
-        this.properties.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getPropertyName(),
-                ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getDefaultValue());
-
         // add env var overrides if present
         this.overwritingProperties.putAll(Arrays.stream(ConfigProperties.values())
                 .map(cp -> Pair.of(
@@ -87,6 +97,20 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
                 .collect(Collectors.toMap(Pair::left, Pair::right)));
     }
 
+    public S3NioSpiConfiguration(Map<String, ?> configs) {
+        configs.entrySet().forEach(c -> {
+            ConfigProperties configProp;
+            try {
+                configProp = ConfigProperties.valueOf(c.getKey());
+            }
+            catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("The key %s is not a valid property".formatted(c.getKey()), e);
+            }
+
+            this.properties.put(configProp.getPropertyName(), c.getValue());
+        });
+    }
+
     /**
      * Get the value of the Maximum Fragment Size
      * @return the configured value or the default if not overridden
@@ -101,7 +125,7 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
      * @return this
      */
     public S3NioSpiConfiguration withMaxFragmentSize(int maxFragmentSize){
-        this.properties.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getPropertyName(), maxFragmentSize);
+        this.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getPropertyName(), maxFragmentSize);
         return this;
     }
 
@@ -119,7 +143,79 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
      * @return this
      */
     public S3NioSpiConfiguration withMaxFragmentNumber(int maxFragmentNumber){
-        this.properties.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_NUMBER.getPropertyName(), maxFragmentNumber);
+        this.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_NUMBER.getPropertyName(), maxFragmentNumber);
+        return this;
+    }
+
+    /**
+     * Get the s3 endpoint
+     * @return the configured value or the default if not overridden
+     */
+    public String getEndpoint(){
+        return this.get(ConfigProperties.S3_SPI_ENDPOINT.getPropertyName()).toString();
+    }
+
+    /**
+     * set the s3 endpoint
+     * @param endpoint
+     * @return this
+     */
+    public S3NioSpiConfiguration withEndpoint(String endpoint){
+        this.put(ConfigProperties.S3_SPI_ENDPOINT.getPropertyName(), endpoint);
+        return this;
+    }
+
+    /**
+     * Get the s3 region
+     * @return the configured value or the default if not overridden
+     */
+    public Region getRegion(){
+        return Region.of(this.get(ConfigProperties.S3_SPI_REGION.getPropertyName()).toString());
+    }
+
+    /**
+     * set the s3 region
+     * @param region
+     * @return this
+     */
+    public S3NioSpiConfiguration withRegion(Region region){
+        this.put(ConfigProperties.S3_SPI_REGION.getPropertyName(), region);
+        return this;
+    }
+
+    /**
+     * Get the s3 client access key
+     * @return the configured value or the default if not overridden
+     */
+    public String getAccessKey(){
+        return this.get(ConfigProperties.S3_SPI_ACCESS_KEY.getPropertyName()).toString();
+    }
+
+    /**
+     * set the s3 client access key
+     * @param accessKey
+     * @return this
+     */
+    public S3NioSpiConfiguration withAccessKey(String accessKey){
+        this.put(ConfigProperties.S3_SPI_ACCESS_KEY.getPropertyName(), accessKey);
+        return this;
+    }
+
+    /**
+     * Get the s3 client secret key
+     * @return the configured value or the default if not overridden
+     */
+    public String getSecretKey(){
+        return this.get(ConfigProperties.S3_SPI_SECRET_KEY.getPropertyName()).toString();
+    }
+
+    /**
+     * set the s3 client secret key
+     * @param secretKey
+     * @return this
+     */
+    public S3NioSpiConfiguration withSecretKey(String secretKey){
+        this.put(ConfigProperties.S3_SPI_SECRET_KEY.getPropertyName(), secretKey);
         return this;
     }
 
@@ -138,28 +234,19 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
     }
 
     @Override
-    public int size() {
-        return this.keySet().size();
-    }
-
-    @Override
-    public boolean isEmpty() {
-        return this.properties.isEmpty() && this.overwritingProperties.isEmpty();
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-        return this.properties.containsKey(key) || this.overwritingProperties.containsKey(key);
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-        return this.properties.containsValue(value) || this.overwritingProperties.containsValue(value);
-    }
-
-    @Override
     public Object get(Object key) {
-        return this.overwritingProperties.getOrDefault(key, this.properties.get(key));
+        final var strKey = key.toString();
+        return this.overwritingProperties.getOrDefault(strKey,
+                this.properties.getOrDefault(strKey,
+                        // if both the properties and overwriting properties does not have the specified
+                        // property configured, then take the default value of the corresponding ConfigProperty
+                        // or throw if the key is not valid
+                        Arrays.stream(ConfigProperties.values())
+                                .filter(v -> v.getPropertyName().equals(strKey))
+                                .findFirst()
+                                .orElseThrow(() ->
+                                        new IllegalArgumentException("The key %s is not a valid property".formatted(strKey)))
+                                .getDefaultValue()));
     }
 
     @Override
@@ -173,35 +260,14 @@ public class S3NioSpiConfiguration implements Map<String, Object> {
     }
 
     @Override
-    public void putAll(Map<? extends String, ?> m) {
-        this.properties.putAll(m);
-    }
-
-    @Override
     public void clear() {
         this.properties.clear();
     }
 
     @Override
-    public Set<String> keySet() {
-        var propsKeySet = this.properties.keySet();
-        propsKeySet.addAll(this.overwritingProperties.keySet());
-
-        return propsKeySet.stream().map(Object::toString).collect(Collectors.toSet());
-    }
-
-    @Override
-    public Collection<Object> values() {
-        var propsValues = this.properties.values();
-        propsValues.addAll(this.overwritingProperties.values());
-
-        return propsValues;
-    }
-
-    @Override
     public Set<Entry<String, Object>> entrySet() {
-        var mergedProps = new HashMap<String, Object>((Map) this.properties);
-        mergedProps.putAll((Map) this.overwritingProperties);
+        var mergedProps = new HashMap<>(this.properties);
+        mergedProps.putAll(this.overwritingProperties);
 
         return mergedProps.entrySet();
     }
