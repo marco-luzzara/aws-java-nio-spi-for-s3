@@ -9,17 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 import software.amazon.nio.spi.s3.util.TimeOutUtils;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.NonReadableChannelException;
-import java.nio.channels.NonWritableChannelException;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.SeekableByteChannel;
-import java.nio.channels.WritableByteChannel;
+import java.nio.channels.*;
 import java.nio.file.OpenOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
@@ -67,11 +61,15 @@ public class S3SeekableByteChannel implements SeekableByteChannel {
      */
     @Deprecated
     protected S3SeekableByteChannel(S3Path s3Path, long startAt) throws IOException {
-        this(s3Path, S3ClientStore.getInstance().getAsyncClientForBucketName(s3Path.bucketName()), startAt);
+        this(s3Path, S3ClientStore.getInstance().getAsyncClientForConfigsAndBucketName(
+                s3Path.getFileSystem().getConfigs(),
+                s3Path.bucketName()), startAt);
     }
 
     protected S3SeekableByteChannel(S3Path s3Path) throws IOException {
-        this(s3Path, S3ClientStore.getInstance().getAsyncClientForBucketName(s3Path.bucketName()), Collections.singleton(StandardOpenOption.READ));
+        this(s3Path, S3ClientStore.getInstance().getAsyncClientForConfigsAndBucketName(
+                s3Path.getFileSystem().getConfigs(),
+                s3Path.bucketName()), Collections.singleton(StandardOpenOption.READ));
     }
 
     protected S3SeekableByteChannel(S3Path s3Path, S3AsyncClient s3Client, Set<? extends OpenOption> options) throws IOException {
@@ -98,7 +96,7 @@ public class S3SeekableByteChannel implements SeekableByteChannel {
 
         // later we will add a constructor that allows providing delegates for composition
 
-        S3NioSpiConfiguration config = new S3NioSpiConfiguration();
+        var configs = path.getFileSystem().getConfigs();
         if (options.contains(StandardOpenOption.WRITE)) {
             LOGGER.info("using S3WritableByteChannel as write delegate for path '{}'", s3Path.toUri());
             readDelegate = null;
@@ -106,7 +104,7 @@ public class S3SeekableByteChannel implements SeekableByteChannel {
             position = 0L;
         } else if (options.contains(StandardOpenOption.READ) || options.size() == 0) {
             LOGGER.info("using S3ReadAheadByteChannel as read delegate for path '{}'", s3Path.toUri());
-            readDelegate = new S3ReadAheadByteChannel(s3Path, config.getMaxFragmentSize(), config.getMaxFragmentNumber(), s3Client, this, timeout, timeUnit);
+            readDelegate = new S3ReadAheadByteChannel(s3Path, configs.getMaxFragmentSize(), configs.getMaxFragmentNumber(), s3Client, this, timeout, timeUnit);
             writeDelegate = null;
         } else {
             throw new IOException("Invalid channel mode");

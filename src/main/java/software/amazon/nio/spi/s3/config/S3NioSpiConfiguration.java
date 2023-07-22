@@ -99,14 +99,7 @@ public class S3NioSpiConfiguration extends AbstractMap<String, Object> {
 
     public S3NioSpiConfiguration(Map<String, ?> configs) {
         configs.entrySet().forEach(c -> {
-            ConfigProperties configProp;
-            try {
-                configProp = ConfigProperties.valueOf(c.getKey());
-            }
-            catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("The key %s is not a valid property".formatted(c.getKey()), e);
-            }
-
+            ConfigProperties configProp = getConfigPropertyFromPropertyName(c.getKey());
             this.properties.put(configProp.getPropertyName(), c.getValue());
         });
     }
@@ -233,6 +226,14 @@ public class S3NioSpiConfiguration extends AbstractMap<String, Object> {
                 .toUpperCase(Locale.ROOT);
     }
 
+    private ConfigProperties getConfigPropertyFromPropertyName(String propertyName) {
+        return Arrays.stream(ConfigProperties.values())
+                .filter(v -> v.getPropertyName().equals(propertyName))
+                .findFirst()
+                .orElseThrow(() ->
+                        new IllegalArgumentException("The key %s is not a valid property".formatted(propertyName)));
+    }
+
     @Override
     public Object get(Object key) {
         final var strKey = key.toString();
@@ -241,12 +242,7 @@ public class S3NioSpiConfiguration extends AbstractMap<String, Object> {
                         // if both the properties and overwriting properties does not have the specified
                         // property configured, then take the default value of the corresponding ConfigProperty
                         // or throw if the key is not valid
-                        Arrays.stream(ConfigProperties.values())
-                                .filter(v -> v.getPropertyName().equals(strKey))
-                                .findFirst()
-                                .orElseThrow(() ->
-                                        new IllegalArgumentException("The key %s is not a valid property".formatted(strKey)))
-                                .getDefaultValue()));
+                        getConfigPropertyFromPropertyName(strKey).getDefaultValue()));
     }
 
     @Override

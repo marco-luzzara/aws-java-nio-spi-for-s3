@@ -7,6 +7,7 @@ package software.amazon.nio.spi.s3;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,10 +25,7 @@ import java.nio.file.PathMatcher;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.UserPrincipalLookupService;
 import java.nio.file.spi.FileSystemProvider;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -44,15 +42,25 @@ public class S3FileSystem extends FileSystem {
 
     private final String bucketName;
     private final S3FileSystemProvider provider;
+    private final S3NioSpiConfiguration configs;
     private boolean open = true;
     private final Set<S3SeekableByteChannel> openChannels = new HashSet<>();
+
+    /**
+     * Create a filesystem with specified configuration and that represents the bucket specified by the URI
+     * @param uriString a valid S3 URI to a bucket, e.g "{@code s3://mybucket}"
+     * @param s3FileSystemProvider the provider to be used with this fileSystem
+     */
+    protected S3FileSystem(String uriString, S3FileSystemProvider s3FileSystemProvider, Map<String, ?> configs) {
+        this(URI.create(uriString), s3FileSystemProvider, configs);
+    }
 
     /**
      * Create a filesystem that represents the bucket specified by the URI
      * @param uriString a valid S3 URI to a bucket, e.g "{@code s3://mybucket}"
      * @param s3FileSystemProvider the provider to be used with this fileSystem
      */
-    protected S3FileSystem(String uriString, S3FileSystemProvider s3FileSystemProvider){
+    protected S3FileSystem(String uriString, S3FileSystemProvider s3FileSystemProvider) {
         this(URI.create(uriString), s3FileSystemProvider);
     }
 
@@ -61,16 +69,37 @@ public class S3FileSystem extends FileSystem {
      * @param uri a valid S3 URI to a bucket, e.g {@code URI.create("s3://mybucket")}
      * @param s3FileSystemProvider the provider to be used with this fileSystem
      */
-    protected S3FileSystem(URI uri, S3FileSystemProvider s3FileSystemProvider) {
+    protected S3FileSystem(URI uri, S3FileSystemProvider s3FileSystemProvider, Map<String, ?> configs) {
         super();
         assert uri.getScheme().equals(S3FileSystemProvider.SCHEME);
         this.bucketName = uri.getAuthority();
         logger.debug("creating FileSystem for 's3://{}'", this.bucketName);
         this.provider = s3FileSystemProvider;
+        if (configs instanceof S3NioSpiConfiguration s3nioSpiConfigs)
+            this.configs = s3nioSpiConfigs;
+        else
+            this.configs = new S3NioSpiConfiguration(configs);
     }
 
     /**
-     * Create a filesystem that represents the named bucket.
+     * Create a filesystem with specified configuration and that represents the bucket specified by the URI
+     * @param uri a valid S3 URI to a bucket, e.g {@code URI.create("s3://mybucket")}
+     * @param s3FileSystemProvider the provider to be used with this fileSystem
+     */
+    protected S3FileSystem(URI uri, S3FileSystemProvider s3FileSystemProvider) {
+        this(uri, s3FileSystemProvider, new S3NioSpiConfiguration());
+    }
+
+    /**
+     * Create a filesystem that represents the named bucket with the specified configuration
+     * @param bucketName the name of the bucket. Must not be null or empty
+     */
+    protected S3FileSystem(String bucketName, Map<String, ?> configs){
+        this (URI.create(S3FileSystemProvider.SCHEME + "://" + bucketName), new S3FileSystemProvider(), configs);
+    }
+
+    /**
+     * Create a filesystem that represents the named bucket
      * @param bucketName the name of the bucket. Must not be null or empty
      */
     protected S3FileSystem(String bucketName){
@@ -94,6 +123,10 @@ public class S3FileSystem extends FileSystem {
      */
     public String bucketName() {
         return bucketName;
+    }
+
+    public S3NioSpiConfiguration getConfigs() {
+        return configs;
     }
 
     /**

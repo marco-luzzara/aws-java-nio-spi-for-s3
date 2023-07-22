@@ -14,6 +14,7 @@ import org.junitpioneer.jupiter.SetEnvironmentVariable;
 import org.junitpioneer.jupiter.SetSystemProperty;
 import software.amazon.awssdk.regions.Region;
 
+import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -36,7 +37,7 @@ class S3NioSpiConfigurationTest {
 
     @ParameterizedTest
     @MethodSource("configGetterAndDefaultValueSource")
-    void givenConfigWithoutMaxFragmentSize_whenReadIt_thenReturnDefault(
+    void givenConfigWithoutProperty_whenReadIt_thenReturnDefault(
             Function<S3NioSpiConfiguration, Object> propertyGetter,
             Object defaultValue) {
         var configs = new S3NioSpiConfiguration();
@@ -63,7 +64,7 @@ class S3NioSpiConfigurationTest {
 
     @ParameterizedTest
     @MethodSource("configSetterAndGetterAndSetValueSource")
-    void givenConfigWithMaxFragmentSize_whenReadIt_thenReturnSetValue(
+    void givenConfigWithPropertySet_whenReadIt_thenReturnSetValue(
             Function<S3NioSpiConfiguration, Object> propertyGetter,
             Consumer<S3NioSpiConfiguration> propertySetter,
             Object expectedValue) {
@@ -96,5 +97,25 @@ class S3NioSpiConfigurationTest {
         var configs = new S3NioSpiConfiguration().withMaxFragmentSize(1);
 
         assertThat(configs.getMaxFragmentSize()).isEqualTo(2);
+    }
+
+    @Test
+    void givenMapWithValidProperties_whenPassedToConstructor_thenSeedWithMap() {
+        var mapConfigs = new HashMap<String, Object>();
+        mapConfigs.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getPropertyName(), 1);
+
+        var configs = new S3NioSpiConfiguration(mapConfigs);
+
+        assertThat(configs.getMaxFragmentSize()).isEqualTo(1);
+    }
+
+    @Test
+    void givenMapWithSomeInvalidProperties_whenPassedToConstructor_thenThrow() {
+        var mapConfigs = new HashMap<String, Object>();
+        mapConfigs.put(ConfigProperties.S3_SPI_READ_MAX_FRAGMENT_SIZE.getPropertyName(), 1);
+
+        var configs = new S3NioSpiConfiguration(mapConfigs);
+
+        assertThat(configs.getMaxFragmentSize()).isEqualTo(1);
     }
 }

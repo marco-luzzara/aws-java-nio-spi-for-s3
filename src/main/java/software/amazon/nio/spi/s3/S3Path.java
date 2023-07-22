@@ -776,9 +776,13 @@ public class S3Path implements Path {
     public String getKey(){
         if(isEmpty()) return "";
         String s = toRealPath(NOFOLLOW_LINKS).toString();
-        if(s.startsWith(S3Path.PATH_SEPARATOR+bucketName())) {
-                s = s.replaceFirst(S3Path.PATH_SEPARATOR+bucketName(), "");
-        }
+        // TODO: why is this useful? it is also the cause of a bug:
+        // bucket: test
+        // key: test.txt
+        // getKey() -> .txt
+//        if(s.startsWith(S3Path.PATH_SEPARATOR+bucketName())) {
+//                s = s.replaceFirst(S3Path.PATH_SEPARATOR+bucketName(), "");
+//        }
         while(s.startsWith(S3Path.PATH_SEPARATOR)){
             s = s.substring(1);
         }

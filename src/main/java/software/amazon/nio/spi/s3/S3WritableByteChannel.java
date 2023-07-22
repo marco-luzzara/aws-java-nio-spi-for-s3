@@ -14,6 +14,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.*;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -74,8 +76,9 @@ public class S3WritableByteChannel implements WritableByteChannel {
                 }
             }
 
-            options.remove(StandardOpenOption.CREATE_NEW);
-            channel = Files.newByteChannel(this.tempFile, options);
+            var optionsWithoutCreate = new HashSet<>(options);
+            optionsWithoutCreate.remove(StandardOpenOption.CREATE_NEW);
+            channel = Files.newByteChannel(this.tempFile, Collections.unmodifiableSet(optionsWithoutCreate));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Could not open the path:" + path, e);

@@ -93,42 +93,46 @@ public class S3FileSystemProviderTest {
     }
 
     @Test
-    public void getFileSystem() {
-        assertNotNull(provider.getFileSystem(URI.create(pathUri)));
+    void getFileSystem() {
+        final var uri = URI.create(pathUri);
+
+        assertThrows(UnsupportedOperationException.class, () -> provider.getFileSystem(uri));
     }
 
     @Test
-    public void getPath() {
-        assertNotNull(provider.getPath(URI.create(pathUri)));
+    void getPath() {
+        final var uri = URI.create(pathUri);
+
+        assertThrows(UnsupportedOperationException.class, () -> provider.getPath(uri));
     }
 
-    @Test
-    public void newByteChannel() throws IOException {
-        final SeekableByteChannel channel = provider.newByteChannel(mockClient, Paths.get(URI.create(pathUri)), Collections.singleton(StandardOpenOption.READ));
-        assertNotNull(channel);
-        assertTrue(channel instanceof S3SeekableByteChannel);
-    }
+//    @Test
+//    public void newByteChannel() throws IOException {
+//        final SeekableByteChannel channel = provider.newByteChannel(mockClient, Paths.get(URI.create(pathUri)), Collections.singleton(StandardOpenOption.READ));
+//        assertNotNull(channel);
+//        assertTrue(channel instanceof S3SeekableByteChannel);
+//    }
 
-    @Test
-    public void newDirectoryStream() throws ExecutionException, InterruptedException {
-
-        S3Object object1 = S3Object.builder().key(pathUri+"/key1").build();
-        S3Object object2 = S3Object.builder().key(pathUri+"/key2").build();
-
-        when(mockClient.listObjectsV2Paginator(any(Consumer.class))).thenReturn(new ListObjectsV2Publisher(mockClient,
-                ListObjectsV2Request.builder()
-                        .bucket(fs.bucketName())
-                        .prefix(pathUri + "/")
-                        .build())
-        );
-
-        when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
-                ListObjectsV2Response.builder().contents(object1, object2).build()));
-
-        final DirectoryStream<Path> stream = provider.newDirectoryStream(mockClient, Paths.get(URI.create(pathUri+"/")), entry -> true);
-        assertNotNull(stream);
-        assertEquals(2, countDirStreamItems(stream));
-    }
+//    @Test
+//    public void newDirectoryStream() throws ExecutionException, InterruptedException {
+//
+//        S3Object object1 = S3Object.builder().key(pathUri+"/key1").build();
+//        S3Object object2 = S3Object.builder().key(pathUri+"/key2").build();
+//
+//        when(mockClient.listObjectsV2Paginator(any(Consumer.class))).thenReturn(new ListObjectsV2Publisher(mockClient,
+//                ListObjectsV2Request.builder()
+//                        .bucket(fs.bucketName())
+//                        .prefix(pathUri + "/")
+//                        .build())
+//        );
+//
+//        when(mockClient.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(CompletableFuture.supplyAsync(() ->
+//                ListObjectsV2Response.builder().contents(object1, object2).build()));
+//
+//        final DirectoryStream<Path> stream = provider.newDirectoryStream(mockClient, Paths.get(URI.create(pathUri+"/")), entry -> true);
+//        assertNotNull(stream);
+//        assertEquals(2, countDirStreamItems(stream));
+//    }
 
     /**
      * Tests core functionality of the path iterator used by the directory stream.

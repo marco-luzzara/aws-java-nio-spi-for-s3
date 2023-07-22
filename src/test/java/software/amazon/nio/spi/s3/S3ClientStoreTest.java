@@ -5,259 +5,157 @@
 
 package software.amazon.nio.spi.s3;
 
-import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
-import software.amazon.awssdk.http.SdkHttpResponse;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetBucketLocationResponse;
-import software.amazon.awssdk.services.s3.model.HeadBucketResponse;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-
-import java.util.NoSuchElementException;
-import java.util.function.Consumer;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InOrder;
 import org.mockito.Mock;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.utils.Pair;
+import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @SuppressWarnings("unchecked")
-public class S3ClientStoreTest {
-    S3ClientStore instance;
+class S3ClientStoreTest {
 
     @Mock
-    S3Client mockClient; //client used to determine bucket location
+    S3Client mockClient;
 
     @Spy
-    final S3ClientStore spyInstance = S3ClientStore.getInstance();
+    final S3ClientStore instance = S3ClientStore.getInstance();
 
     @BeforeEach
-    public void setUp() throws Exception {
-        instance = S3ClientStore.getInstance();
+    public void initializeEach() throws Exception {
+        lenient().doAnswer(i -> mock(S3Client.class)).when(instance).generateClient(any());
+        lenient().doAnswer(i -> mock(S3AsyncClient.class)).when(instance).generateAsyncClient(any());
+    }
+
+    @AfterEach
+    public void cleanUpEach() {
+        instance.clearClientCache();
+        instance.clearAsyncClientCache();
     }
 
     @Test
-    public void testGetClientForNullBucketName() {
-        assertEquals(S3ClientStore.DEFAULT_CLIENT, instance.getClientForBucketName(null));
+    void givenClientStore_whenANewUniqueClientIsRequested_thenCreateIt() {
+        final var bucketName = "test";
+        final var clientConfigs = new S3NioSpiConfiguration();
+
+        var client = instance.getClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        assertThat(client).isNotNull();
+        verify(instance).generateClient(argThat(p -> p.equals(Pair.of(clientConfigs, bucketName))));
     }
 
     @Test
-    public void testGetAsyncClientForNullBucketName() {
-        assertEquals(S3ClientStore.DEFAULT_ASYNC_CLIENT, instance.getAsyncClientForBucketName(null));
+    void givenClientStore_whenANewUniqueAsyncClientIsRequested_thenCreateIt() {
+        final var bucketName = "test";
+        final var clientConfigs = new S3NioSpiConfiguration();
+
+        var asyncClient = instance.getAsyncClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        assertThat(asyncClient).isNotNull();
+        verify(instance).generateAsyncClient(argThat(p -> p.equals(Pair.of(clientConfigs, bucketName))));
     }
 
     @Test
-    public void testGetClientForEmptyBucketName() {
-        assertEquals(S3ClientStore.DEFAULT_CLIENT, instance.getClientForBucketName(""));
-        assertEquals(S3ClientStore.DEFAULT_CLIENT, instance.getClientForBucketName(" "));
+    void givenClientStore_whenAClientWithSameKeyIsRequested_thenReturnTheCachedOne() {
+        final var bucketName = "test";
+        final var clientConfigs = new S3NioSpiConfiguration();
+        var cachedClient = instance.getClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        var returnedClient = instance.getClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        verify(instance).generateClient(argThat(p -> p.equals(Pair.of(clientConfigs, bucketName))));
+        assertThat(returnedClient).isSameAs(cachedClient);
     }
 
     @Test
-    public void testGetAsyncClientForEmptyBucketName() {
-        assertEquals(S3ClientStore.DEFAULT_ASYNC_CLIENT, instance.getAsyncClientForBucketName(""));
-        assertEquals(S3ClientStore.DEFAULT_ASYNC_CLIENT, instance.getAsyncClientForBucketName(" "));
+    void givenClientStore_whenAnAsyncClientWithSameKeyIsRequested_thenReturnTheCachedOne() {
+        final var bucketName = "test";
+        final var clientConfigs = new S3NioSpiConfiguration();
+        var cachedClient = instance.getAsyncClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        var returnedClient = instance.getAsyncClientForConfigsAndBucketName(clientConfigs, bucketName);
+
+        verify(instance).generateAsyncClient(argThat(p -> p.equals(Pair.of(clientConfigs, bucketName))));
+        assertThat(returnedClient).isSameAs(cachedClient);
     }
 
     @Test
-    public void testGenerateClientWithNoErrors() {
-        when(mockClient.getBucketLocation(any(Consumer.class)))
-                .thenReturn(GetBucketLocationResponse.builder().locationConstraint("us-west-2").build());
-        final S3Client s3Client = instance.generateClient("test-bucket", mockClient);
-        assertNotNull(s3Client);
+    void givenConfigWithOnlyAccessKeySet_whenGenerateClient_thenThrow() {
+        final var clientConfigs = new S3NioSpiConfiguration().withAccessKey("test");
+        var mockedBuilder = mock(S3ClientBuilder.class);
 
+        assertThrows(IllegalArgumentException.class,
+                () -> instance.attachCredentialsIfProvided(mockedBuilder, clientConfigs));
     }
 
     @Test
-    public void testGenerateAsyncClientWithNoErrors() {
-        when(mockClient.getBucketLocation(any(Consumer.class)))
-                .thenReturn(GetBucketLocationResponse.builder().locationConstraint("us-west-2").build());
-        final S3AsyncClient s3Client = instance.generateAsyncClient("test-bucket", mockClient);
-        assertNotNull(s3Client);
+    void givenConfigWithOnlySecretKeySet_whenGenerateClient_thenThrow() {
+        final var clientConfigs = new S3NioSpiConfiguration().withSecretKey("test");
+        var mockedBuilder = mock(S3ClientBuilder.class);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> instance.attachCredentialsIfProvided(mockedBuilder, clientConfigs));
     }
 
     @Test
-    public void testGenerateClientWith403Response() {
-        // when you get a forbidden response from getBucketLocation
-        when(mockClient.getBucketLocation(any(Consumer.class))).thenThrow(
-                S3Exception.builder().statusCode(403).build()
-        );
-        // you should fall back to a head bucket attempt
-        when(mockClient.headBucket(any(Consumer.class)))
-                .thenReturn((HeadBucketResponse) HeadBucketResponse.builder()
-                        .sdkHttpResponse(SdkHttpResponse.builder()
-                                .putHeader("x-amz-bucket-region", "us-west-2")
-                                .build())
-                        .build());
+    void givenConfigWithOnlyAccessKeySet_whenGenerateAsyncClient_thenThrow() {
+        final var clientConfigs = new S3NioSpiConfiguration().withAccessKey("test");
+        var mockedBuilder = mock(S3AsyncClientBuilder.class);
 
-        // which should get you a client
-        final S3Client s3Client = instance.generateClient("test-bucket", mockClient);
-        assertNotNull(s3Client);
-
-        final InOrder inOrder = inOrder(mockClient);
-        inOrder.verify(mockClient).getBucketLocation(any(Consumer.class));
-        inOrder.verify(mockClient).headBucket(any(Consumer.class));
-        inOrder.verifyNoMoreInteractions();
+        assertThrows(IllegalArgumentException.class,
+                () -> instance.attachCredentialsIfProvided(mockedBuilder, clientConfigs));
     }
 
     @Test
-    public void testGenerateAsyncClientWith403Response() {
-        // when you get a forbidden response from getBucketLocation
-        when(mockClient.getBucketLocation(any(Consumer.class))).thenThrow(
-                S3Exception.builder().statusCode(403).build()
-        );
-        // you should fall back to a head bucket attempt
-        when(mockClient.headBucket(any(Consumer.class)))
-                .thenReturn((HeadBucketResponse) HeadBucketResponse.builder()
-                        .sdkHttpResponse(SdkHttpResponse.builder()
-                                .putHeader("x-amz-bucket-region", "us-west-2")
-                                .build())
-                        .build());
+    void givenConfigWithOnlySecretKeySet_whenGenerateAsyncClient_thenThrow() {
+        final var clientConfigs = new S3NioSpiConfiguration().withSecretKey("test");
+        var mockedBuilder = mock(S3AsyncClientBuilder.class);
 
-        // which should get you a client
-        final S3AsyncClient s3Client = instance.generateAsyncClient("test-bucket", mockClient);
-        assertNotNull(s3Client);
-
-        final InOrder inOrder = inOrder(mockClient);
-        inOrder.verify(mockClient).getBucketLocation(any(Consumer.class));
-        inOrder.verify(mockClient).headBucket(any(Consumer.class));
-        inOrder.verifyNoMoreInteractions();
+        assertThrows(IllegalArgumentException.class,
+                () -> instance.attachCredentialsIfProvided(mockedBuilder, clientConfigs));
     }
 
     @Test
-    public void testGenerateAsyncClientWith403Then301Responses(){
-        // when you get a forbidden response from getBucketLocation
-        when(mockClient.getBucketLocation(any(Consumer.class))).thenThrow(
-                S3Exception.builder().statusCode(403).build()
-        );
-        // and you get a 301 response on headBucket
-        when(mockClient.headBucket(any(Consumer.class))).thenThrow(
-                S3Exception.builder()
-                        .statusCode(301)
-                        .awsErrorDetails(AwsErrorDetails.builder()
-                                .sdkHttpResponse(SdkHttpResponse.builder()
-                                        .putHeader("x-amz-bucket-region", "us-west-2")
-                                        .build())
-                                .build())
-                        .build()
-        );
+    void givenConfigWithCredentialsSet_whenGenerateClient_thenUseThoseCredentials() {
+        final var accessKey = "testKey";
+        final var secretKey = "testSecret";
+        final var clientConfigs = new S3NioSpiConfiguration().withAccessKey(accessKey).withSecretKey(secretKey);
+        var builder = mock(S3ClientBuilder.class);
 
-        // then you should be able to get a client as long as the error response header contains the region
-        final S3AsyncClient s3Client = instance.generateAsyncClient("test-bucket", mockClient);
-        assertNotNull(s3Client);
+        instance.attachCredentialsIfProvided(builder, clientConfigs);
 
-        final InOrder inOrder = inOrder(mockClient);
-        inOrder.verify(mockClient).getBucketLocation(any(Consumer.class));
-        inOrder.verify(mockClient).headBucket(any(Consumer.class));
-        inOrder.verifyNoMoreInteractions();
+        verify(builder).credentialsProvider(argThat(a -> {
+            var credentials = a.resolveCredentials();
+            return credentials.accessKeyId().equals(accessKey) && credentials.secretAccessKey().equals(secretKey);
+        }));
     }
 
     @Test
-    public void testGenerateClientWith403Then301ResponsesNoHeader(){
-        // when you get a forbidden response from getBucketLocation
-        when(mockClient.getBucketLocation(any(Consumer.class))).thenThrow(
-                S3Exception.builder().statusCode(403).build()
-        );
-        // and you get a 301 response on headBucket but no header for region
-        when(mockClient.headBucket(any(Consumer.class))).thenThrow(
-                S3Exception.builder()
-                        .statusCode(301)
-                        .awsErrorDetails(AwsErrorDetails.builder()
-                                .sdkHttpResponse(SdkHttpResponse.builder()
-                                        .build())
-                                .build())
-                        .build()
-        );
+    void givenConfigWithCredentialsSet_whenGenerateAsyncClient_thenUseThoseCredentials() {
+        final var accessKey = "testKey";
+        final var secretKey = "testSecret";
+        final var clientConfigs = new S3NioSpiConfiguration().withAccessKey(accessKey).withSecretKey(secretKey);
+        var builder = mock(S3AsyncClientBuilder.class);
 
-        // then you should get a NoSuchElement exception when you try to get the header
-        try {
-            instance.generateClient("test-bucket", mockClient);
-        } catch (Exception e) {
-            assertEquals(NoSuchElementException.class, e.getClass());
-        }
+        instance.attachCredentialsIfProvided(builder, clientConfigs);
 
-        final InOrder inOrder = inOrder(mockClient);
-        inOrder.verify(mockClient).getBucketLocation(any(Consumer.class));
-        inOrder.verify(mockClient).headBucket(any(Consumer.class));
-        inOrder.verifyNoMoreInteractions();
-    }
-
-
-    @Test
-    public void testGenerateAsyncClientWith403Then301ResponsesNoHeader(){
-        // when you get a forbidden response from getBucketLocation
-        when(mockClient.getBucketLocation(any(Consumer.class))).thenThrow(
-                S3Exception.builder().statusCode(403).build()
-        );
-        // and you get a 301 response on headBucket but no header for region
-        when(mockClient.headBucket(any(Consumer.class))).thenThrow(
-                S3Exception.builder()
-                        .statusCode(301)
-                        .awsErrorDetails(AwsErrorDetails.builder()
-                                .sdkHttpResponse(SdkHttpResponse.builder()
-                                        .build())
-                                .build())
-                        .build()
-        );
-
-        // then you should get a NoSuchElement exception when you try to get the header
-        try {
-            instance.generateAsyncClient("test-bucket", mockClient);
-        } catch (Exception e) {
-            assertEquals(NoSuchElementException.class, e.getClass());
-        }
-
-        final InOrder inOrder = inOrder(mockClient);
-        inOrder.verify(mockClient).getBucketLocation(any(Consumer.class));
-        inOrder.verify(mockClient).headBucket(any(Consumer.class));
-        inOrder.verifyNoMoreInteractions();
-    }
-
-    @Test
-    public void testCaching() {
-        S3Client client = S3Client.builder().region(Region.US_EAST_1).build();
-        doReturn(client).when(spyInstance).generateClient("test-bucket");
-
-        final S3Client client1 = spyInstance.getClientForBucketName("test-bucket");
-        verify(spyInstance).generateClient("test-bucket");
-        assertSame(client1, client);
-
-        S3Client differentClient = S3Client.builder().region(Region.US_EAST_1).build();
-        assertNotSame(client, differentClient);
-
-        lenient().doReturn(differentClient).when(spyInstance).generateClient("test-bucket");
-        final S3Client client2 = spyInstance.getClientForBucketName("test-bucket");
-        // same instance because second is cached.
-        assertSame(client1, client2);
-        assertSame(client2, client);
-        assertNotSame(client2, differentClient);
-    }
-
-    @Test
-    public void testAsyncCaching() {
-        S3AsyncClient client = S3AsyncClient.builder().region(Region.US_EAST_1).build();
-        doReturn(client).when(spyInstance).generateAsyncClient("test-bucket");
-
-        final S3AsyncClient client1 = spyInstance.getAsyncClientForBucketName("test-bucket");
-        verify(spyInstance).generateAsyncClient("test-bucket");
-        assertSame(client1, client);
-
-        S3AsyncClient differentClient = S3AsyncClient.builder().region(Region.US_EAST_1).build();
-        assertNotSame(client, differentClient);
-
-        lenient().doReturn(differentClient).when(spyInstance).generateAsyncClient("test-bucket");
-        final S3AsyncClient client2 = spyInstance.getAsyncClientForBucketName("test-bucket");
-        // same instance because second is cached.
-        assertSame(client1, client2);
-        assertSame(client2, client);
-        assertNotSame(client2, differentClient);
+        verify(builder).credentialsProvider(argThat(a -> {
+            var credentials = a.resolveCredentials();
+            return credentials.accessKeyId().equals(accessKey) && credentials.secretAccessKey().equals(secretKey);
+        }));
     }
 }
 
