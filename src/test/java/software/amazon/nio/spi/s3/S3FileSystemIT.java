@@ -2,7 +2,6 @@ package software.amazon.nio.spi.s3;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -10,25 +9,16 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.core.async.AsyncRequestBody;
-import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.nio.spi.s3.config.S3NioSpiConfiguration;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
+import java.nio.file.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,7 +57,7 @@ class S3FileSystemIT {
     @Test
     void givenBytesToWriteOnFileInRoot_whenFileIsCreated_thenObjectIsAddedToBucket() throws IOException {
         try (var fs = FileSystems.newFileSystem(URI.create(BASE_URI), getConfigsWithLocalstackParams())) {
-            var root = fs.getRootDirectories().iterator().next();
+            var root = getRoot(fs);
             var filePath = root.resolve("test.txt");
             final var fileContent = new byte[] { 1, 2 };
 
@@ -82,7 +72,7 @@ class S3FileSystemIT {
     @Test
     void givenBytesToWriteOnFileInNestedFolder_whenFileIsCreated_thenObjectIsAddedToBucket() throws IOException {
         try (var fs = FileSystems.newFileSystem(URI.create(BASE_URI), getConfigsWithLocalstackParams())) {
-            var root = fs.getRootDirectories().iterator().next();
+            var root = getRoot(fs);
             final var dirPath = root.resolve("folder1").resolve("folder2");
             final var filePath = dirPath.resolve("test.txt");
             final var fileContent = new byte[] { 1, 2 };
@@ -102,13 +92,34 @@ class S3FileSystemIT {
         try (var fs = FileSystems.newFileSystem(URI.create(BASE_URI), getConfigsWithLocalstackParams())) {
             final var fileContent = new byte[] { 1, 2 };
             uploadObject(BUCKET, "test.txt", fileContent);
-            var root = fs.getRootDirectories().iterator().next();
+            var root = getRoot(fs);
             final var filePath = root.resolve("test.txt");
 
             var readContent = Files.readAllBytes(filePath);
 
             assertThat(readContent).isEqualTo(fileContent);
         }
+    }
+
+    @Test
+    void givenManyUploadedInSameDir_whenListingTheDir_thenReturnThem() throws IOException {
+        try (var fs = FileSystems.newFileSystem(URI.create(BASE_URI), getConfigsWithLocalstackParams())) {
+            var root = getRoot(fs);
+            final var dirPath = root.resolve("mydir");
+            uploadObject(BUCKET, "mydir/test1.txt", new byte[] {});
+            uploadObject(BUCKET, "mydir/test2.txt", new byte[] {});
+            uploadObject(BUCKET, "mydir/nested/test3.txt", new byte[] {});
+            uploadObject(BUCKET, "excluded/not.txt", new byte[] {});
+
+            var files = Files.walk(dirPath.resolve(".")).toList();
+
+            assertThat(files).extracting(Path::toString).containsOnly("/mydir/.", "mydir/nested/",
+                    "mydir/test1.txt", "mydir/test2.txt", "mydir/nested/test3.txt");
+        }
+    }
+
+    private Path getRoot(FileSystem fs) {
+        return fs.getRootDirectories().iterator().next();
     }
 
     private void uploadObject(String bucket, String key, byte[] fileContent) {
@@ -120,7 +131,7 @@ class S3FileSystemIT {
     }
 
     private int getObjectCount(String bucket) {
-        return s3.listObjectsV2(b -> b.bucket(BUCKET)).keyCount();
+        return s3.listObjectsV2(b -> b.bucket(bucket)).keyCount();
     }
 
     private S3NioSpiConfiguration getConfigsWithLocalstackParams() {
