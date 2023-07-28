@@ -194,7 +194,12 @@ public class S3Path implements Path {
         int size = pathRepresentation.elements().size();
         if (this.equals(getRoot()) || size < 1) return null;
         if (pathRepresentation.isAbsolute() && size == 1) return getRoot();
-        return subpath(0, getNameCount()-1);
+        try {
+            return subpath(0, getNameCount() - 1);
+        }
+        catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**
